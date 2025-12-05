@@ -1,1 +1,69 @@
 
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+<meta charset="UTF-8">
+<title>ESP32 BLE Controller</title>
+<style>
+body { font-family: sans-serif; direction: rtl; text-align: center; }
+button { width:150px; padding:10px; margin:8px; }
+#log { border:1px solid #444; background:#fafafa; height:200px; overflow:auto; text-align:left; padding:10px; }
+</style>
+</head>
+<body>
+
+<h2>WebApp + BLE ارتباط</h2>
+
+<button id="btnConnect">اتصال بلوتوث</button><br>
+<input id="inputMsg" placeholder="پیام"><br>
+<button id="btnSend">ارسال</button>
+
+<h3>Log</h3>
+<div id="log"></div>
+
+<script>
+let rx, tx;
+
+function addLog(msg){
+    log.innerHTML += msg + "<br>";
+    log.scrollTop = log.scrollHeight;
+}
+
+btnConnect.onclick = async () => {
+  try {
+
+    let device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: "ESP32-WebBLE" }],
+      optionalServices: ["6E400001-B5A3-F393-E0A9-E50E24DCCA9E"]
+    });
+
+    let server = await device.gatt.connect();
+    let service = await server.getPrimaryService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+
+    rx = await service.getCharacteristic("6E400002-B5A3-F393-E0A9-E50E24DCCA9E");
+    tx = await service.getCharacteristic("6E400003-B5A3-F393-E0A9-E50E24DCCA9E");
+
+    await tx.startNotifications();
+    tx.addEventListener("characteristicvaluechanged", e => {
+        addLog("ESP32 → " + new TextDecoder().decode(e.target.value));
+    });
+
+    addLog("BLE Connected ✔");
+
+  } catch(e){
+    addLog("خطا: " + e);
+  }
+};
+
+btnSend.onclick = async () => {
+  if(!rx) { addLog("BLE وصل نیست ❌"); return; }
+
+  let text = inputMsg.value;
+  await rx.writeValue(new TextEncoder().encode(text));
+
+  addLog("You → " + text);
+};
+</script>
+</body>
+</html>
+
