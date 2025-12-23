@@ -1,69 +1,238 @@
-
 <!DOCTYPE html>
 <html lang="fa">
 <head>
 <meta charset="UTF-8">
-<title>ESP32 BLE Controller</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Industrial BLE Monitor</title>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+
 <style>
-body { font-family: sans-serif; direction: rtl; text-align: center; }
-button { width:150px; padding:10px; margin:8px; }
-#log { border:1px solid #444; background:#fafafa; height:200px; overflow:auto; text-align:left; padding:10px; }
-</style>
-</head>
-<body>
-
-<h2>WebApp + BLE ارتباط</h2>
-
-<button id="btnConnect">اتصال بلوتوث</button><br>
-<input id="inputMsg" placeholder="پیام"><br>
-<button id="btnSend">ارسال</button>
-
-<h3>Log</h3>
-<div id="log"></div>
-
-<script>
-let rx, tx;
-
-function addLog(msg){
-    log.innerHTML += msg + "<br>";
-    log.scrollTop = log.scrollHeight;
+:root {
+  --bg:#0f172a;
+  --panel:#111827;
+  --accent:#22c55e;
+  --accent-strong:#16a34a;
+  --text:#e5e7eb;
+  --grid:#374151;
+}
+.light {
+  --bg:#f3f4f6;
+  --panel:#ffffff;
+  --text:#111827;
+  --grid:#d1d5db;
 }
 
-btnConnect.onclick = async () => {
-  try {
+body {
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:system-ui;
+}
 
-    let device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: "ESP32-WebBLE" }],
-      optionalServices: ["6e400001-b5a3-f393-e0a9-e50e24dcca9e"]
-    });
+.container {
+  max-width:900px;
+  margin:auto;
+  padding:16px;
+}
 
-    let server = await device.gatt.connect();
-    let service = await server.getPrimaryService("6e400001-b5a3-f393-e0a9-e50e24dcca9e");
+.card {
+  background:var(--panel);
+  border-radius:16px;
+  padding:16px;
+  margin-bottom:16px;
+  box-shadow:0 10px 30px rgba(0,0,0,.3);
+}
 
-    rx = await service.getCharacteristic("6e400002-b5a3-f393-e0a9-e50e24dcca9e");
-    tx = await service.getCharacteristic("6e400003-b5a3-f393-e0a9-e50e24dcca9e");
+h2 {margin:0 0 10px}
 
-    await tx.startNotifications();
-    tx.addEventListener("characteristicvaluechanged", e => {
-        addLog("ESP32 → " + new TextDecoder().decode(e.target.value));
-    });
+button,input {
+  padding:12px;
+  border-radius:12px;
+  border:none;
+  font-size:16px;
+}
 
-    addLog("BLE Connected ✔");
+button {
+  background:var(--accent);
+  color:black;
+  font-weight:600;
+}
 
-  } catch(e){
-    addLog("خطا: " + e);
+button.secondary {
+  background:#334155;
+  color:white;
+}
+
+button.danger {
+  background:#ef4444;
+}
+
+.controls {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+
+.timer {
+  font-size:28px;
+  text-align:center;
+  letter-spacing:2px;
+}
+
+canvas {
+  width:100%!important;
+  height:340px!important;
+}
+
+.toggle {
+  float:right;
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<div class="card">
+  <h2>Industrial BLE Pressure Monitor
+    <span class="toggle" onclick="toggleTheme()">🌓</span>
+  </h2>
+  <button onclick="connectBLE()">🔗 اتصال بلوتوث</button>
+</div>
+
+<div class="card">
+  <canvas id="chart"></canvas>
+</div>
+
+<div class="card">
+  <div class="timer" id="timer">00:00.00</div>
+  <div class="controls">
+    <button onclick="startTimer()">▶ Start</button>
+    <button class="secondary" onclick="stopTimer()">⏸ Stop</button>
+  </div>
+</div>
+
+<div class="card">
+  <input id="sens" type="number" placeholder="میزان حساسیت">
+  <div class="controls">
+    <button onclick="sendSensitivity()">ارسال حساسیت</button>
+    <button class="danger" onclick="resetAll()">Reset</button>
+  </div>
+</div>
+
+</div>
+
+<script>
+/* ---------- BLE ---------- */
+const SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+const TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+
+let rxChar, txChar;
+let sample = 0;
+
+/* ---------- Chart ---------- */
+const ctx = document.getElementById("chart");
+const chart = new Chart(ctx,{
+  type:"line",
+  data:{
+    labels:[],
+    datasets:[{
+      data:[],
+      borderWidth:3,
+      tension:.4,
+      segment:{
+        borderColor:ctx=>{
+          return ctx.p0.parsed.y < 2500 ?
+            "rgba(34,197,94,.5)" :
+            "rgba(22,163,74,1)";
+        }
+      }
+    }]
+  },
+  options:{
+    responsive:true,
+    plugins:{
+      zoom:{
+        zoom:{wheel:{enabled:true}, pinch:{enabled:true}, mode:'x'},
+        pan:{enabled:true, mode:'x'}
+      }
+    },
+    scales:{
+      x:{title:{display:true,text:"Sample"}},
+      y:{
+        min:0,max:4000,
+        ticks:{stepSize:250},
+        grid:{color:getComputedStyle(document.body).getPropertyValue('--grid')}
+      }
+    }
   }
-};
+});
 
-btnSend.onclick = async () => {
-  if(!rx) { addLog("BLE وصل نیست ❌"); return; }
+/* ---------- BLE Functions ---------- */
+async function connectBLE(){
+  const device = await navigator.bluetooth.requestDevice({
+    filters:[{services:[SERVICE]}]
+  });
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(SERVICE);
+  rxChar = await service.getCharacteristic(RX);
+  txChar = await service.getCharacteristic(TX);
 
-  let text = inputMsg.value;
-  await rx.writeValue(new TextEncoder().encode(text));
+  await txChar.startNotifications();
+  txChar.addEventListener("characteristicvaluechanged",e=>{
+    const val = parseInt(new TextDecoder().decode(e.target.value));
+    addPoint(val);
+  });
+}
 
-  addLog("You → " + text);
-};
+function sendSensitivity(){
+  if(!rxChar) return;
+  const v = document.getElementById("sens").value;
+  rxChar.writeValue(new TextEncoder().encode(v));
+}
+
+/* ---------- Chart Update ---------- */
+function addPoint(val){
+  chart.data.labels.push(sample++);
+  chart.data.datasets[0].data.push(val);
+  chart.update("none");
+}
+
+/* ---------- Timer ---------- */
+let t=0, int=null;
+function startTimer(){
+  if(int) return;
+  int=setInterval(()=>{
+    t+=10;
+    let ms = Math.floor((t%1000)/10);
+    let s = Math.floor(t/1000)%60;
+    let m = Math.floor(t/60000);
+    timer.innerText=
+      `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${String(ms).padStart(2,"0")}`;
+  },10);
+}
+function stopTimer(){clearInterval(int);int=null;}
+
+/* ---------- Reset ---------- */
+function resetAll(){
+  stopTimer();
+  t=0;
+  timer.innerText="00:00.00";
+  sample=0;
+  chart.data.labels=[];
+  chart.data.datasets[0].data=[];
+  chart.update();
+}
+
+/* ---------- Theme ---------- */
+function toggleTheme(){
+  document.body.classList.toggle("light");
+}
 </script>
 </body>
 </html>
-
