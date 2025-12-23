@@ -1,7 +1,7 @@
 {
-  "name": "ESP32 BLE Controller",
-  "short_name": "BLE Ctrl",
-  "description": "Web App for ESP32 BLE control",
+  "name": "BOXING",
+  "short_name": "BOXING",
+  "description": "Web App for BOXING Mitt",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#1f1f1f",
