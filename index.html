@@ -2,93 +2,80 @@
 <html lang="fa">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Industrial BLE Monitor</title>
 
-<!-- Chart.js -->
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0f1e">
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
 
 <style>
 :root {
-  --bg:#0f172a;
-  --panel:#111827;
-  --accent:#22c55e;
-  --accent-strong:#16a34a;
-  --text:#e5e7eb;
-  --grid:#374151;
+  --bg: #0a0f1e;
+  --card: #141b2d;
+  --text: #eaeaea;
+  --accent: #00c8ff;
+  --danger: #ff4d4d;
 }
 .light {
-  --bg:#f3f4f6;
-  --panel:#ffffff;
-  --text:#111827;
-  --grid:#d1d5db;
+  --bg: #f2f2f2;
+  --card: #ffffff;
+  --text: #111;
 }
-
 body {
   margin:0;
-  background:var(--bg);
-  color:var(--text);
-  font-family:system-ui;
+  font-family: Tahoma, sans-serif;
+  background: var(--bg);
+  color: var(--text);
 }
-
 .container {
-  max-width:900px;
-  margin:auto;
-  padding:16px;
+  padding: 12px;
 }
-
 .card {
-  background:var(--panel);
-  border-radius:16px;
-  padding:16px;
-  margin-bottom:16px;
-  box-shadow:0 10px 30px rgba(0,0,0,.3);
+  background: var(--card);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.4);
 }
-
-h2 {margin:0 0 10px}
-
-button,input {
+button, input {
+  width:100%;
   padding:12px;
-  border-radius:12px;
+  margin-top:8px;
+  border-radius:10px;
   border:none;
-  font-size:16px;
+  font-size:15px;
 }
-
 button {
-  background:var(--accent);
+  background: var(--accent);
   color:black;
-  font-weight:600;
+  font-weight:bold;
 }
-
-button.secondary {
-  background:#334155;
+.secondary {
+  background:#444;
   color:white;
 }
-
-button.danger {
-  background:#ef4444;
+.danger {
+  background: var(--danger);
 }
-
-.controls {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:10px;
+.row {
+  display:flex;
+  gap:8px;
 }
-
+.row button { flex:1 }
 .timer {
-  font-size:28px;
+  font-size:26px;
   text-align:center;
-  letter-spacing:2px;
+  font-weight:bold;
 }
-
 canvas {
-  width:100%!important;
-  height:340px!important;
+  max-height:320px;
 }
-
 .toggle {
-  float:right;
+  text-align:center;
   cursor:pointer;
 }
 </style>
@@ -98,10 +85,7 @@ canvas {
 <div class="container">
 
 <div class="card">
-  <h2>Industrial BLE Pressure Monitor
-    <span class="toggle" onclick="toggleTheme()">🌓</span>
-  </h2>
-  <button onclick="connectBLE()">🔗 اتصال بلوتوث</button>
+  <button onclick="connectBLE()">🔵 اتصال بلوتوث</button>
 </div>
 
 <div class="card">
@@ -109,74 +93,93 @@ canvas {
 </div>
 
 <div class="card">
-  <div class="timer" id="timer">00:00.00</div>
-  <div class="controls">
-    <button onclick="startTimer()">▶ Start</button>
-    <button class="secondary" onclick="stopTimer()">⏸ Stop</button>
+  <div class="timer" id="timer">00.00</div>
+  <div class="row">
+    <button onclick="startTimer()">Start</button>
+    <button class="secondary" onclick="stopTimer()">Stop</button>
   </div>
 </div>
 
 <div class="card">
-  <input id="sens" type="number" placeholder="میزان حساسیت">
-  <div class="controls">
-    <button onclick="sendSensitivity()">ارسال حساسیت</button>
-    <button class="danger" onclick="resetAll()">Reset</button>
-  </div>
+  <input id="sens" type="number" placeholder="تنظیم حساسیت">
+  <button onclick="sendSensitivity()">ارسال حساسیت</button>
 </div>
+
+<div class="card">
+  <button class="danger" onclick="resetAll()">Reset Chart & Timer</button>
+</div>
+
+<div class="card toggle" onclick="toggleTheme()">🌙 / ☀️ تغییر تم</div>
 
 </div>
 
 <script>
 /* ---------- BLE ---------- */
-const SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-const TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+const SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
 let rxChar, txChar;
-let sample = 0;
 
 /* ---------- Chart ---------- */
-const ctx = document.getElementById("chart");
-const chart = new Chart(ctx,{
-  type:"line",
-  data:{
-    labels:[],
-    datasets:[{
-      data:[],
-      borderWidth:3,
-      tension:.4,
-      segment:{
-        borderColor:ctx=>{
-          return ctx.p0.parsed.y < 2500 ?
-            "rgba(34,197,94,.5)" :
-            "rgba(22,163,74,1)";
-        }
+let dataIndex = 0;
+const ctx = document.getElementById('chart');
+
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      data: [],
+      borderWidth: 3,
+      tension: 0.35,
+      segment: {
+        borderColor: ctx => ctx.p1.parsed.y < 2500 ? '#66ccff' : '#ff3333'
       }
     }]
   },
-  options:{
-    responsive:true,
-    plugins:{
-      zoom:{
-        zoom:{wheel:{enabled:true}, pinch:{enabled:true}, mode:'x'},
-        pan:{enabled:true, mode:'x'}
+  options: {
+    animation: { duration: 400 },
+    scales: {
+      y: {
+        min: 0,
+        max: 4000,
+        ticks: { stepSize: 250 }
       }
     },
-    scales:{
-      x:{title:{display:true,text:"Sample"}},
-      y:{
-        min:0,max:4000,
-        ticks:{stepSize:250},
-        grid:{color:getComputedStyle(document.body).getPropertyValue('--grid')}
+    plugins: {
+      legend: { display: false },
+      zoom: {
+        zoom: {
+          wheel: { enabled: true },
+          pinch: { enabled: true },
+          mode: 'x'
+        },
+        pan: { enabled: true, mode: 'x' }
       }
     }
   }
 });
 
-/* ---------- BLE Functions ---------- */
-async function connectBLE(){
+/* ---------- Timer ---------- */
+let t = 0, timerInt = null;
+function startTimer() {
+  if(timerInt) return;
+  timerInt = setInterval(() => {
+    t += 0.01;
+    document.getElementById('timer').innerText = t.toFixed(2);
+  }, 10);
+}
+function stopTimer() {
+  clearInterval(timerInt);
+  timerInt = null;
+}
+
+/* ---------- BLE ---------- */
+async function connectBLE() {
   const device = await navigator.bluetooth.requestDevice({
-    filters:[{services:[SERVICE]}]
+    filters: [{ name: 'ESP32-WebBLE' }],
+    optionalServices: [SERVICE]
   });
   const server = await device.gatt.connect();
   const service = await server.getPrimaryService(SERVICE);
@@ -184,55 +187,36 @@ async function connectBLE(){
   txChar = await service.getCharacteristic(TX);
 
   await txChar.startNotifications();
-  txChar.addEventListener("characteristicvaluechanged",e=>{
+  txChar.addEventListener('characteristicvaluechanged', e => {
     const val = parseInt(new TextDecoder().decode(e.target.value));
     addPoint(val);
   });
 }
 
-function sendSensitivity(){
-  if(!rxChar) return;
-  const v = document.getElementById("sens").value;
-  rxChar.writeValue(new TextEncoder().encode(v));
-}
-
-/* ---------- Chart Update ---------- */
-function addPoint(val){
-  chart.data.labels.push(sample++);
-  chart.data.datasets[0].data.push(val);
-  chart.update("none");
-}
-
-/* ---------- Timer ---------- */
-let t=0, int=null;
-function startTimer(){
-  if(int) return;
-  int=setInterval(()=>{
-    t+=10;
-    let ms = Math.floor((t%1000)/10);
-    let s = Math.floor(t/1000)%60;
-    let m = Math.floor(t/60000);
-    timer.innerText=
-      `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${String(ms).padStart(2,"0")}`;
-  },10);
-}
-function stopTimer(){clearInterval(int);int=null;}
-
-/* ---------- Reset ---------- */
-function resetAll(){
-  stopTimer();
-  t=0;
-  timer.innerText="00:00.00";
-  sample=0;
-  chart.data.labels=[];
-  chart.data.datasets[0].data=[];
+function addPoint(v) {
+  chart.data.labels.push(dataIndex++);
+  chart.data.datasets[0].data.push(v);
   chart.update();
 }
 
-/* ---------- Theme ---------- */
-function toggleTheme(){
-  document.body.classList.toggle("light");
+function sendSensitivity() {
+  const v = document.getElementById('sens').value;
+  rxChar.writeValue(new TextEncoder().encode(v));
+}
+
+function resetAll() {
+  chart.data.labels = [];
+  chart.data.datasets[0].data = [];
+  chart.update();
+  stopTimer();
+  t = 0;
+  timer.innerText = "00.00";
+}
+
+function toggleTheme() {
+  document.body.classList.toggle('light');
 }
 </script>
+
 </body>
 </html>
