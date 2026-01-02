@@ -12,6 +12,9 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a0f1e">
 
+<script>
+Chart.register(ChartZoom);
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
 
@@ -106,12 +109,17 @@ canvas {
 </div>
 
 <div class="card">
-  <input id="sens" type="number" placeholder="تنظیم حساسیت">
-  <button onclick="sendSensitivity()">ارسال حساسیت</button>
+  <div class="row">
+    <input id="sens" type="number" placeholder="تنظیم حساسیت">
+    <button onclick="sendSensitivity()">اعمال</button>
+  </div>
 </div>
 
 <div class="card">
-  <button class="danger" onclick="resetAll()">Reset Chart & Timer</button>
+  <div class="row">
+    <button onclick="exportCSV()">📤 دریافت فایل</button>
+    <button class="danger" onclick="resetAll()">Reset Chart & Timer</button>
+  </div>
 </div>
 
 <div class="card toggle" onclick="toggleTheme()">🌙 / ☀️ تغییر تم</div>
@@ -183,7 +191,7 @@ function stopTimer() {
 /* ---------- BLE ---------- */
 async function connectBLE() {
   const device = await navigator.bluetooth.requestDevice({
-    filters: [{ name: 'ESP32-WebBLE' }],
+    filters: [{ services: [SERVICE] }]
     optionalServices: [SERVICE]
   });
   const server = await device.gatt.connect();
@@ -203,13 +211,22 @@ function addPoint(v) {
   chart.data.datasets[0].data.push(v);
   chart.update();
 }
-
-function sendSensitivity() {
-  const v = document.getElementById('sens').value;
-  rxChar.writeValue(new TextEncoder().encode(v));
+const MAX_POINTS = 300;
+let timestamps = [];
+function addPoint(v) {
+  if (chart.data.labels.length > MAX_POINTS) {
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+  timestamps.push(t.toFixed(2));
+  chart.data.labels.push(dataIndex++);
+  chart.data.datasets[0].data.push(v);
+  chart.update('none');
 }
 
+
 function resetAll() {
+  dataIndex =0;
   chart.data.labels = [];
   chart.data.datasets[0].data = [];
   chart.update();
@@ -230,6 +247,30 @@ if ('serviceWorker' in navigator) {
     .catch(err => console.log('SW registration failed:', err));
   });
 }
+function exportCSV() {
+  if (chart.data.datasets[0].data.length === 0) {
+    alert("داده‌ای برای ذخیره وجود ندارد");
+    return;
+  }
+
+let csv = "index,time,value\n";
+chart.data.datasets[0].data.forEach((v, i) => {
+  csv += `${i},${timestamps[i]},${v}\n`;
+});
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `ble_data_${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 </script>
 
 </body>
