@@ -12,11 +12,12 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0a0f1e">
 
-<script>
-Chart.register(ChartZoom);
-</script>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+<script>
+  Chart.register(ChartZoom);
+</script>
 
 <style>
 :root {
@@ -175,13 +176,16 @@ const chart = new Chart(ctx, {
 });
 
 /* ---------- Timer ---------- */
-let t = 0, timerInt = null;
+let startTime = 0;
+
 function startTimer() {
-  if(timerInt) return;
+  if (timerInt) return;
+  startTime = performance.now() - t * 1000;
+
   timerInt = setInterval(() => {
-    t += 0.01;
+    t = (performance.now() - startTime) / 1000;
     document.getElementById('timer').innerText = t.toFixed(2);
-  }, 10);
+  }, 16);
 }
 function stopTimer() {
   clearInterval(timerInt);
@@ -191,7 +195,7 @@ function stopTimer() {
 /* ---------- BLE ---------- */
 async function connectBLE() {
   const device = await navigator.bluetooth.requestDevice({
-    filters: [{ services: [SERVICE] }]
+    filters: [{ services: [SERVICE] }],
     optionalServices: [SERVICE]
   });
   const server = await device.gatt.connect();
@@ -206,17 +210,15 @@ async function connectBLE() {
   });
 }
 
-function addPoint(v) {
-  chart.data.labels.push(dataIndex++);
-  chart.data.datasets[0].data.push(v);
-  chart.update();
-}
+
 const MAX_POINTS = 300;
 let timestamps = [];
 function addPoint(v) {
+  if (isNaN(v)) return;
   if (chart.data.labels.length > MAX_POINTS) {
     chart.data.labels.shift();
     chart.data.datasets[0].data.shift();
+    timestamps.shift();
   }
   timestamps.push(t.toFixed(2));
   chart.data.labels.push(dataIndex++);
@@ -229,10 +231,12 @@ function resetAll() {
   dataIndex =0;
   chart.data.labels = [];
   chart.data.datasets[0].data = [];
+  timestamps = [];
   chart.update();
   stopTimer();
   t = 0;
-  timer.innerText = "00.00";
+  document.getElementById('timer').innerText = "00.00";
+  
 }
 
 function toggleTheme() {
